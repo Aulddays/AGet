@@ -75,6 +75,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\asio.hpp" />
     <ClInclude Include="src\stdafx.h" />
     <ClInclude Include="src\targetver.h" />
   </ItemGroup>
