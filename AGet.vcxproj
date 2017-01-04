@@ -79,12 +79,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AGet.hpp" />
+    <ClInclude Include="src\AGetJob.hpp" />
     <ClInclude Include="src\asio.hpp" />
     <ClInclude Include="src\stdafx.h" />
     <ClInclude Include="src\targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\AGet.cpp" />
+    <ClCompile Include="src\AGetJob.cpp" />
     <ClCompile Include="src\console.cpp" />
     <ClCompile Include="src\stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

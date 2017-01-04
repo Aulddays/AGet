@@ -24,6 +24,12 @@
     <ClInclude Include="src\asio.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AGet.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AGetJob.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\stdafx.cpp">
@@ -33,6 +39,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\console.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AGetJob.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
