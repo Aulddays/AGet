@@ -1,38 +1,33 @@
 #pragma once
 
+#include <set>
 #include <curl/curl.h>
+
+#include "AGet.hpp"
 
 class AGetJob
 {
 public:
-	AGetJob();
+	AGetJob(AGet *aget);
 	~AGetJob();
 
-	int run(const char *url);
+	int get(const char *url);
+
+	int onTaskDone(AGet::BaseTask *task, CURLcode code);
 
 private:
-	struct Task
+	struct Task: public AGet::BaseTask
 	{
-		AGetJob *job;
 		int id;
 		CURL *curl;
 		size_t size;
-		Task(AGetJob *job, int id) : job(job), id(id), curl(NULL), size(0){}
+		Task(AGetJob *job, int id, CURL *curl) : AGet::BaseTask(job), id(id), curl(curl), size(0){}
 	};
-	static size_t onData(void *contents, size_t size, size_t nmemb, void *userp)
-	{
-		return ((Task *)userp)->job->onData((Task *)userp, contents, size, nmemb);
-	}
-	size_t onData(Task *task, void *contents, size_t size, size_t nmemb);
-	static size_t onHeader(void *contents, size_t size, size_t nmemb, void *userp)
-	{
-		return ((Task *)userp)->job->onHeader((Task *)userp, contents, size, nmemb);
-	}
-	size_t onHeader(Task *task, void *contents, size_t size, size_t nmemb);
-	static int onDebug(CURL *handle, curl_infotype type, char *contents, size_t size, void *userp)
-	{
-		return ((Task *)userp)->job->onDebug((Task *)userp, type, contents, size);
-	}
-	int onDebug(Task *task, curl_infotype type, char *contents, size_t size);
+	static size_t onData(char *cont, size_t size, size_t nmemb, Task *task);
+	static size_t onHeader(char *cont, size_t size, size_t nmemb, Task *task);
+	static int onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task);
+
+	AGet *aget;
+	std::set<Task *> tasks;
 };
 

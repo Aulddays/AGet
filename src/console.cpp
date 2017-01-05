@@ -6,5 +6,5 @@ int main(int, char **, char **)
 {
 	AGet aget;
 
-	return aget.run("http://www.sohu.com/");
+	return aget.get("http://www.sohu.com/");
 }
