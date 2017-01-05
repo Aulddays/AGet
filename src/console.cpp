@@ -5,6 +5,10 @@
 int main(int, char **, char **)
 {
 	AGet aget;
+	aget.init();
 
-	return aget.get("http://www.sohu.com/");
+	if (aget.get("http://www.sohu.com/"))
+		return -1;
+
+	return aget.run();
 }

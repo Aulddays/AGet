@@ -11,8 +11,9 @@ AGetJob::~AGetJob()
 {
 }
 
-int AGetJob::get(const char *url)
+int AGetJob::get(const char *geturl)
 {
+	url = geturl;
 	CURL *curl = curl_easy_init();
 	if (!curl)
 	{
@@ -23,30 +24,41 @@ int AGetJob::get(const char *url)
 	Task *task = new Task(this, 0, curl);
 	tasks.insert(task);
 
-	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, onData);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&task);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)task);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, onHeader);
-	curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)&task);
+	curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)task);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, onDebug);
-	curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)&task);
+	curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)task);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
 
-	return aget->addTask(task);
+	return aget->addTask(curl, task);
+}
 
-	//if (res != CURLE_OK) {
-	//	fprintf(stderr, "curl_easy_perform() failed: %s\n",
-	//		curl_easy_strerror(res));
-	//}
-	//else {
-	//	printf("%lu bytes retrieved in total\n", (unsigned long)task.size);
-	//}
+int AGetJob::onTaskDone(AGet::BaseTask *basetask, CURLcode code)
+{
+	Task *task = (Task *)basetask;
+	if (tasks.find(task) == tasks.end())
+	{
+		fprintf(stderr, "Invalid task.\n");
+		return -1;
+	}
+	if (code != CURLE_OK) {
+		fprintf(stderr, "task failed: %s\n", curl_easy_strerror(code));
+	}
+	else {
+		printf("%lu bytes retrieved in total\n", (unsigned long)task->size);
+	}
 
-	///* cleanup curl stuff */
-	//curl_easy_cleanup(task.curl);
+	tasks.erase(task);
+	curl_easy_cleanup(task->curl);
+	delete task;
+
+	return aget->onJobDone(this);
 }
 
 size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)

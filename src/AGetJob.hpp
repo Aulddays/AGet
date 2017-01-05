@@ -13,7 +13,7 @@ public:
 
 	int get(const char *url);
 
-	int onTaskDone(AGet::BaseTask *task, CURLcode code);
+	int onTaskDone(AGet::BaseTask *basetask, CURLcode code);
 
 private:
 	struct Task: public AGet::BaseTask
@@ -28,6 +28,7 @@ private:
 	static int onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task);
 
 	AGet *aget;
+	std::string url;
 	std::set<Task *> tasks;
 };
 

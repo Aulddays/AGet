@@ -12,12 +12,6 @@ public:
 	CurlGlobalHelper::~CurlGlobalHelper(){ curl_global_cleanup(); }
 } curlGlobalHelper;
 
-int AGet::get(const char *url)
-{
-	AGetJob job(this);
-	return job.get(url);
-}
-
 int AGet::init()
 {
 	curlm = curl_multi_init();
@@ -30,11 +24,70 @@ int AGet::init()
 	return 0;
 }
 
-int AGet::addTask(BaseTask *task)
+int AGet::get(const char *url)
 {
+	AGetJob *job = new AGetJob(this);
+	jobs.insert(job);
+	int ret = job->get(url);
+	if (ret)
+	{
+		fprintf(stderr, "Start job failed.\n");
+		jobs.erase(job);
+	}
+	return ret;
+}
+
+int AGet::onJobDone(AGetJob *job)
+{
+	std::set<AGetJob *>::iterator ijob = jobs.find(job);
+	if (ijob == jobs.end())
+	{
+		fprintf(stderr, "Invalid job object.\n");
+		return -1;
+	}
+	fprintf(stderr, "Job done.\n");
+	jobs.erase(ijob);
+	delete job;
 	return 0;
 }
 
+int AGet::addTask(CURL *curl, BaseTask *task)
+{
+	if (curl2task.find(curl) != curl2task.end())
+	{
+		fprintf(stderr, "task already running.\n");
+		return -1;
+	}
+	curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, openSock);
+	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, (void *)this);
+	curl_easy_setopt(curl, CURLOPT_CLOSESOCKETFUNCTION, closeSock);
+	curl_easy_setopt(curl, CURLOPT_CLOSESOCKETDATA, (void *)this);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 1L);
+	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L);
+	CURLMcode rc = curl_multi_add_handle(curlm, curl);
+	if (rc != CURLM_OK)
+	{
+		fprintf(stderr, "curl_multi_add_handle() failed %d.\n", (int)rc);
+		return -1;
+	}
+	curl2task[curl] = task;
+	return 0;
+}
+
+int AGet::onTaskDone(CURL *curl, CURLcode code)
+{
+	std::map<CURL *, BaseTask *>::iterator itask = curl2task.find(curl);
+	if (itask == curl2task.end())
+	{
+		fprintf(stderr, "Invalid curl handle.\n");
+		return -1;
+	}
+	curl_multi_remove_handle(curlm, curl);
+	BaseTask *task = itask->second;
+	return task->job->onTaskDone(task, code);
+}
+
+////////// libcurl-asio helpers
 // CURLMOPT_SOCKETFUNCTION
 int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, void *)
 {
@@ -63,7 +116,7 @@ int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, void *)
 				boost::bind(&onSockEvent, pthis, sock, what));
 			break;
 	case CURL_POLL_OUT:
-		fprintf(stderr, "watching for socket to become readable\n");
+		fprintf(stderr, "watching for socket to become writable\n");
 		sock->async_write_some(asio::null_buffers(),
 			boost::bind(&onSockEvent, pthis, sock, what));
 		break;
@@ -85,7 +138,7 @@ int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, void *)
 // async event callback from doSock()
 void AGet::onSockEvent(asio::ip::tcp::socket *sock, int action)
 {
-	fprintf(stderr, "onSockEvent: action=%d", action);
+	fprintf(stderr, "onSockEvent: action=%d\n", action);
 
 	CURLMcode rc;
 	int running = 0;
@@ -105,7 +158,7 @@ void AGet::onSockEvent(asio::ip::tcp::socket *sock, int action)
 // CURLMOPT_TIMERFUNCTION: Update the event timer after curl_multi library calls
 int AGet::doTimer(CURLM *curlm, long timeout_ms, AGet *pthis)
 {
-	fprintf(stderr, "doTimer: timeout_ms %ld", timeout_ms);
+	fprintf(stderr, "doTimer: timeout_ms %ld\n", timeout_ms);
 
 	// cancel running timer
 	pthis->timer.cancel();
@@ -196,25 +249,11 @@ int AGet::closeSock(AGet *pthis, curl_socket_t item)
 void AGet::checkTasks()
 {
 	int msgs_left;
+	fprintf(stderr, "checkTasks\n");
 	while (CURLMsg *msg = curl_multi_info_read(curlm, &msgs_left))
 	{
+		fprintf(stderr, "Task message %d\n", (int)msg->msg);
 		if (msg->msg == CURLMSG_DONE)
-		{
-			CURL *curl = msg->easy_handle;
-			curl_multi_remove_handle(curlm, curl);
-			onTaskDone(curl, msg->data.result);
-		}
+			onTaskDone(msg->easy_handle, msg->data.result);
 	}
-}
-
-int AGet::onTaskDone(CURL *curl, CURLcode code)
-{
-	std::map<CURL *, BaseTask *>::iterator itask = curl2task.find(curl);
-	if (itask == curl2task.end())
-	{
-		fprintf(stderr, "Invalid curl handle.\n");
-		return -1;
-	}
-	BaseTask *task = itask->second;
-	return task->job->onTaskDone(task, code);
 }

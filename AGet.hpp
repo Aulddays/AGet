@@ -1,7 +1,7 @@
 #pragma once
 
+#include <set>
 #include <curl/curl.h>
-
 #include "asio.hpp"
 
 class AGetJob;
@@ -21,7 +21,8 @@ public:
 		BaseTask(AGetJob *job) : job(job){}
 	};
 
-	int addTask(BaseTask *task);
+	int addTask(CURL *curl, BaseTask *task);
+	int onJobDone(AGetJob *job);
 
 private:
 	// libcurl socket event waiting
@@ -44,4 +45,6 @@ private:
 	asio::deadline_timer timer;	// timer for libcurl
 	std::map<CURL *, BaseTask *> curl2task;	// curl easy handler to task pointer
 	std::map<curl_socket_t, asio::ip::tcp::socket *> sockmap;
+
+	std::set<AGetJob *> jobs;
 };
