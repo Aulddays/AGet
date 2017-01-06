@@ -62,8 +62,8 @@ int AGet::addTask(CURL *curl, BaseTask *task)
 	curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, (void *)this);
 	curl_easy_setopt(curl, CURLOPT_CLOSESOCKETFUNCTION, closeSock);
 	curl_easy_setopt(curl, CURLOPT_CLOSESOCKETDATA, (void *)this);
-	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 1L);
-	curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L);
+	//curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 1L);
+	//curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L);
 	CURLMcode rc = curl_multi_add_handle(curlm, curl);
 	if (rc != CURLM_OK)
 	{
@@ -89,7 +89,7 @@ int AGet::onTaskDone(CURL *curl, CURLcode code)
 
 ////////// libcurl-asio helpers
 // CURLMOPT_SOCKETFUNCTION
-int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, void *)
+int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, int *status)
 {
 	fprintf(stderr, "dosock: socket=%d, what=%d\n", csock, what);
 
@@ -104,54 +104,106 @@ int AGet::doSock(CURL *curl, curl_socket_t csock, int what, AGet *pthis, void *)
 		sock = isock->second;
 	}
 
+	// print logs
 	switch (what)
 	{
 	case CURL_POLL_REMOVE:
 		fprintf(stderr, "remove sock\n");
-		// TODO: confirm nothing to do?
 		break;
 	case CURL_POLL_IN:
-			fprintf(stderr, "watching for socket to become readable\n");
-			sock->async_read_some(asio::null_buffers(),
-				boost::bind(&onSockEvent, pthis, sock, what));
-			break;
+		fprintf(stderr, "watching for socket to become readable\n");
+		break;
 	case CURL_POLL_OUT:
 		fprintf(stderr, "watching for socket to become writable\n");
-		sock->async_write_some(asio::null_buffers(),
-			boost::bind(&onSockEvent, pthis, sock, what));
 		break;
 	case CURL_POLL_INOUT:
 		fprintf(stderr, "watching for socket to become readable & writable\n");
-		sock->async_read_some(asio::null_buffers(),
-			boost::bind(&onSockEvent, pthis, sock, what));
-		sock->async_write_some(asio::null_buffers(),
-			boost::bind(&onSockEvent, pthis, sock, what));
 		break;
 	default:
 		fprintf(stderr, "Unsupported action %d\n", what);
 		break;
 	}
 
+	// calculate need
+	int need = 0;
+	if (what == CURL_POLL_IN || what == CURL_POLL_INOUT)
+		need |= NEED_READ;
+	if (what == CURL_POLL_OUT || what == CURL_POLL_INOUT)
+		need |= NEED_WRITE;
+	// manage memory for status
+	if (need && !status)
+	{
+		status = new int(need);
+		curl_multi_assign(pthis->curlm, csock, status);
+	}
+	else if (!need && status)	// already watching now and remove is requested
+	{
+		// Immediately remove status pointer from socket, incase the socket are to be added elsewhere later.
+		// According to asio document, cancel() on async actions is not guarranteed to suceed. So if the
+		// socket is being watched on read/write, just keep that on and keep the memory of status, so that
+		// when onSockEvent() get called when something happens to the watch, it will know that the watch
+		// is no longer needed and will not inform curl with the event.
+		curl_multi_assign(pthis->curlm, csock, NULL);
+		if (*status == 0)
+		{
+			delete status;
+			status = NULL;
+		}
+	}
+	// update need in status
+	if (status)
+		*status = need | (*status & ~NEED_MASK);
+
+	if ((need & NEED_READ) && !(*status & DOING_READ))
+	{
+		sock->async_read_some(asio::null_buffers(), boost::bind(&onSockEvent, pthis, sock, DOING_READ, asio::placeholders::error, status));
+		*status |= DOING_READ;
+	}
+	if ((need & NEED_WRITE) && !(*status & DOING_WRITE))
+	{
+		sock->async_write_some(asio::null_buffers(), boost::bind(&onSockEvent, pthis, sock, DOING_WRITE, asio::placeholders::error, status));
+		*status |= DOING_WRITE;
+	}
+
 	return 0;
 }
 
 // async event callback from doSock()
-void AGet::onSockEvent(asio::ip::tcp::socket *sock, int action)
+void AGet::onSockEvent(asio::ip::tcp::socket *sock, int action, const asio::error_code & ec, int *status)
 {
 	fprintf(stderr, "onSockEvent: action=%d\n", action);
 
-	CURLMcode rc;
-	int running = 0;
-	rc = curl_multi_socket_action(curlm, sock->native_handle(), action, &running);
-	if (rc != CURLM_OK)
-		fprintf(stderr, "Fatal error of libcurl %d\n", (int)rc);
-
-	checkTasks();
-
-	if (running <= 0)
+	if ((action >> NEED_TO_DOING) & *status)	// socket not yet removed
 	{
-		fprintf(stderr, "last transfer done, kill timeout\n");
-		timer.cancel();
+		CURLMcode rc;
+		int running = 0;
+		int ev_bitmask = ec ? CURL_CSELECT_ERR : (action == DOING_READ ? CURL_CSELECT_IN : CURL_CSELECT_OUT);
+		rc = curl_multi_socket_action(curlm, sock->native_handle(), ev_bitmask, &running);
+		if (rc != CURLM_OK)
+			fprintf(stderr, "Fatal error of libcurl %d\n", (int)rc);
+
+		checkTasks();
+
+		if (running <= 0)
+		{
+			fprintf(stderr, "last transfer done, kill timeout\n");
+			timer.cancel();
+		}
+
+		if (!ec && ((action >> NEED_TO_DOING) & *status))	// no error, keep watching
+		{
+			if (action == DOING_READ)
+				sock->async_read_some(asio::null_buffers(), boost::bind(&AGet::onSockEvent, this, sock, DOING_READ, asio::placeholders::error, status));
+			else
+				sock->async_write_some(asio::null_buffers(), boost::bind(&AGet::onSockEvent, this, sock, DOING_WRITE, asio::placeholders::error, status));
+			fprintf(stderr, "watch %s\n", action == DOING_READ ? "read" : "write");
+		}
+	}
+	if (ec || !((action >> NEED_TO_DOING) & *status))
+	{
+		*status &= ~action;	// clear the DOING bit
+		if (*status == 0)	// no need watching and not watching
+			delete status;
 	}
 }
 

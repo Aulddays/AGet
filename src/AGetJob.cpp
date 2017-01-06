@@ -35,6 +35,7 @@ int AGetJob::get(const char *geturl)
 	curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)task);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
+	//curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
 
 	return aget->addTask(curl, task);
 }
@@ -66,6 +67,13 @@ size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 	size_t realsize = size * nmemb;
 	printf("%lu bytes retrieved\n", (unsigned long)realsize);
 	task->size += realsize;
+
+	//FILE *fp = fopen("out.htm", task->size == realsize ? "wb" : "ab");
+	//if (fp)
+	//{
+	//	fwrite(cont, realsize, 1, fp);
+	//	fclose(fp);
+	//}
 
 	return realsize;
 }

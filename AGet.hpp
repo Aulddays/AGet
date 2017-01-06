@@ -2,7 +2,6 @@
 
 #include <set>
 #include <curl/curl.h>
-#include "asio.hpp"
 
 class AGetJob;
 class AGet
@@ -26,9 +25,19 @@ public:
 
 private:
 	// libcurl socket event waiting
-	static int doSock(CURL *curl, curl_socket_t sock, int what, AGet *pthis, void *);
-	void onSockEvent(asio::ip::tcp::socket *sock, int action);
-	// libcurl timer waiting
+	static int doSock(CURL *curl, curl_socket_t sock, int what, AGet *pthis, int *status);
+	void onSockEvent(asio::ip::tcp::socket *sock, int action, const asio::error_code & ec, int *status);
+	enum	// bit masks for socket watching status
+	{
+		NEED_READ = 1,
+		NEED_WRITE = NEED_READ << 1,
+		NEED_MASK = NEED_READ | NEED_WRITE,
+		DOING_READ = NEED_WRITE << 1,
+		DOING_WRITE = DOING_READ << 1,
+		DOING_MASK = DOING_READ | DOING_READ,
+		NEED_TO_DOING = 2	// NEED_XXX << 2 == DOING_XXX
+	};
+		// libcurl timer waiting
 	static int doTimer(CURLM *curlm, long timeout_ms, AGet *pthis);
 	void onTimer(const asio::error_code & ec);
 	// libcurl opensocket and closesocket. handle these to keep record of sockmap
