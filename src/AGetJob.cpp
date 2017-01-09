@@ -2,7 +2,7 @@
 #include "AGetJob.hpp"
 
 
-AGetJob::AGetJob(AGet *aget) : aget(aget)
+AGetJob::AGetJob(AGet *aget) : aget(aget), size(-1), status(JOB_START)
 {
 }
 
@@ -21,15 +21,15 @@ int AGetJob::get(const char *geturl)
 		return -1;
 	}
 
-	Task *task = new Task(this, 0, curl);
+	Task *task = new Task(aget, this, 0, curl, 0, -1);
 	tasks.insert(task);
 
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, onData);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)task);
-	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, onHeader);
-	curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)task);
+	//curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, onHeader);
+	//curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)task);
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, onDebug);
 	curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)task);
@@ -52,7 +52,7 @@ int AGetJob::onTaskDone(AGet::BaseTask *basetask, CURLcode code)
 		fprintf(stderr, "task failed: %s\n", curl_easy_strerror(code));
 	}
 	else {
-		printf("%lu bytes retrieved in total\n", (unsigned long)task->size);
+		printf("%lu bytes retrieved in total\n", (unsigned long)task->got);
 	}
 
 	tasks.erase(task);
@@ -66,7 +66,7 @@ size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 {
 	size_t realsize = size * nmemb;
 	printf("%lu bytes retrieved\n", (unsigned long)realsize);
-	task->size += realsize;
+	task->got += realsize;
 
 	//FILE *fp = fopen("out.htm", task->size == realsize ? "wb" : "ab");
 	//if (fp)
@@ -78,18 +78,40 @@ size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 	return realsize;
 }
 
-size_t AGetJob::onHeader(char *cont, size_t size, size_t nmemb, Task *task)
-{
-	size_t realsize = size * nmemb;
-	fwrite(cont, size, nmemb, stderr);
-
-	return realsize;
-}
+//size_t AGetJob::onHeader(char *cont, size_t size, size_t nmemb, Task *task)
+//{
+//	size_t realsize = size * nmemb;
+//	fputs("< ", stderr);
+//	fwrite(cont, size, nmemb, stderr);
+//
+//	return realsize;
+//}
 
 int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task)
 {
-	if (type == CURLINFO_HEADER_OUT)
+	switch (type)
+	{
+	case CURLINFO_HEADER_OUT:
+	{
+		// seems that the entire out headers come at once
+		while (char *pend = (char *)memchr((void *)cont, '\n', size))
+		{
+			fputs("> ", stderr);
+			fwrite(cont, pend - cont + 1, 1, stderr);
+			size -= pend - cont + 1;
+			cont = pend + 1;
+		}
+		break;
+	}
+	case CURLINFO_HEADER_IN:
+	{
+		fputs("< ", stderr);
 		fwrite(cont, size, 1, stderr);
+		if (task->status == Task::TASK_GOTHEADER)
+			task->clear();
+		break;
+	}
+	}
 
 	return 0;
 }

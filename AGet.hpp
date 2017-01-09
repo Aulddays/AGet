@@ -16,8 +16,10 @@ public:
 
 	struct BaseTask
 	{
+		AGet *aget;
 		AGetJob *job;
-		BaseTask(AGetJob *job) : job(job){}
+		int id;
+		BaseTask(AGet *aget, AGetJob *job, int id) : aget(aget), job(job), id(id){}
 	};
 
 	int addTask(CURL *curl, BaseTask *task);
