@@ -11,6 +11,11 @@
 
 #include <stdio.h>
 #include <tchar.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#	define strcasecmp _stricmp
+#endif
 
 #include "asio.hpp"
 

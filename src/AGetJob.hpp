@@ -5,6 +5,17 @@
 
 #include "AGet.hpp"
 
+class MultiProgress
+{
+	uint64_t size;
+	std::vector<std::pair<uint64_t, uint64_t> > parts;
+	MultiProgress() :size(0){}
+	int add(uint64_t s, uint64_t e)
+	{
+		return 0;
+	}
+};
+
 class AGetJob
 {
 public:
@@ -23,7 +34,7 @@ private:
 		uint64_t end;
 		uint64_t got;
 		uint64_t written;
-		uint64_t size;	// Content-Size
+		uint64_t size;	// Content-Size from header
 		bool encode;	// compressed or chunked
 		enum
 		{
@@ -42,6 +53,7 @@ private:
 	static size_t onData(char *cont, size_t size, size_t nmemb, Task *task);
 	//static size_t onHeader(char *cont, size_t size, size_t nmemb, Task *task);
 	static int onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task);
+	static int onProgress(Task *task, curl_off_t, curl_off_t, curl_off_t, curl_off_t);
 
 	AGet *aget;
 	std::string url;
