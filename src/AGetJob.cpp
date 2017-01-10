@@ -67,10 +67,32 @@ int AGetJob::onTaskDone(AGet::BaseTask *basetask, CURLcode code)
 size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 {
 	AGetJob *pthis = task->job;
-	// check response code
-	if (pthis->status == JOB_START)	// initial task
+	if (task->status < Task::TASK_GOTHEADER)
+		PELOG_ERROR_RETURN((PLV_ERROR, "Invalid task state %d\n", task->status), 0);
+	if (task->status == Task::TASK_GOTHEADER)	// first data received
 	{
-		assert(task->id == 0);
+		// check response code
+		long respcode = 0;
+		if(curl_easy_getinfo(task->curl, CURLINFO_RESPONSE_CODE, &respcode) != CURLE_OK ||
+				respcode != 200)
+			PELOG_ERROR_RETURN((PLV_ERROR, "Server response %ld\n", respcode), 0);
+		task->status = Task::TASK_GOTDATA;
+		if (pthis->status == JOB_START)	// initial task
+		{
+			assert(task->id == 0);
+			if (!task->encode && task->size != -1)
+			{
+				PELOG_LOG((PLV_INFO, "Multi-tasking supported.\n"));
+				pthis->status = JOB_MULTI;
+				// determine number of tasks
+			}
+			else
+			{
+				PELOG_LOG((PLV_WARNING, "Multi-tasking not supported.\n"));
+				pthis->status = JOB_SINGLE;
+			}
+		}
+
 	}
 	size_t realsize = size * nmemb;
 	printf("%lu bytes retrieved\n", (unsigned long)realsize);
@@ -135,6 +157,7 @@ static int parseHttpHeader(const char *header, size_t hlen, char *k, size_t klen
 
 int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task)
 {
+	AGetJob *pthis = task->job;
 	switch (type)
 	{
 	case CURLINFO_HEADER_OUT:
@@ -167,14 +190,20 @@ int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, 
 		if ((strcasecmp(key, "Content-Encoding") == 0 || strcasecmp(key, "Transfer-Encoding") == 0) &&
 			!(!*value || strcasecmp(value, "identity")))
 		{
+			if (pthis->status <= JOB_START)
+				PELOG_LOG((PLV_INFO, "Transfer encoded.\n"));
 			task->encode = true;
 		}
 		else if (strcasecmp(key, "Content-Length") == 0)
 		{
 			char *endptr = NULL;
 			unsigned long long ct = strtoull(value, &endptr, 10);
-			if (!endptr && ct != ULLONG_MAX)
+			if (!*endptr && ct != ULLONG_MAX)
+			{
 				task->size = (uint64_t)ct;
+				if (pthis->status <= JOB_START)
+					PELOG_LOG((PLV_INFO, "Got file size %llu.\n", ct));
+			}
 		}
 		else if (*cont == '\r' || *cont == '\n' || !*cont)
 			task->status = Task::TASK_GOTHEADER;
@@ -182,5 +211,10 @@ int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, 
 	}
 	}
 
+	return 0;
+}
+
+int AGetJob::onProgress(Task *task, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+{
 	return 0;
 }

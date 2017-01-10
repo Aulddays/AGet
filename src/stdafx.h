@@ -18,5 +18,6 @@
 #endif
 
 #include "asio.hpp"
+#include "pe_log.h"
 
 // TODO: reference additional headers your program requires here
