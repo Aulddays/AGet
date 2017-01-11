@@ -21,6 +21,9 @@ int AGet::init()
 	curl_multi_setopt(curlm, CURLMOPT_TIMERFUNCTION, doTimer);
 	curl_multi_setopt(curlm, CURLMOPT_TIMERDATA, this);
 
+	hbtimer.expires_from_now(boost::posix_time::millisec(1000));
+	hbtimer.async_wait(boost::bind(&AGet::onHeartbeat, this, _1));
+
 	return 0;
 }
 
@@ -85,6 +88,18 @@ int AGet::onTaskDone(CURL *curl, CURLcode code)
 	curl_multi_remove_handle(curlm, curl);
 	BaseTask *task = itask->second;
 	return task->job->onTaskDone(task, code);
+}
+
+void AGet::onHeartbeat(const asio::error_code & ec)
+{
+	time_t now = time(NULL);
+	for (auto i = jobs.begin(); i != jobs.end();)
+	{
+		auto next = i;
+		++next;	// i may be invalidated during heartBeat, so must not ++i directly
+		(*i)->onHeartbeat(now);
+		i = next;
+	}
 }
 
 ////////// libcurl-asio helpers

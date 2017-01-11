@@ -7,12 +7,13 @@ class AGetJob;
 class AGet
 {
 public:
-	AGet():curlm(NULL), timer(io_service){};
+	AGet():mode(MODE_ONCE), curlm(NULL), hbtimer(io_service), timer(io_service){};
 	~AGet(){ if(curlm) curl_multi_cleanup(curlm); };
 
 	int init();
 	int get(const char *url);
-	int run(){ asio::error_code ec; io_service.run(ec); return ec ? -1: 0; }
+	int run(){ mode = MODE_DAEMON;  asio::error_code ec; io_service.run(ec); return ec ? -1 : 0; }
+	int runone(){ asio::error_code ec; io_service.run(ec); return ec ? -1 : 0; }
 
 	struct BaseTask
 	{
@@ -26,6 +27,7 @@ public:
 	int onJobDone(AGetJob *job);
 
 private:
+	void onHeartbeat(const asio::error_code & ec);
 	// libcurl socket event waiting
 	static int doSock(CURL *curl, curl_socket_t sock, int what, AGet *pthis, int *status);
 	void onSockEvent(asio::ip::tcp::socket *sock, int action, const asio::error_code & ec, int *status);
@@ -52,7 +54,13 @@ private:
 
 private:
 	asio::io_service io_service;
+	enum
+	{
+		MODE_ONCE,
+		MODE_DAEMON
+	} mode;
 	CURLM *curlm;
+	asio::deadline_timer hbtimer;	// timer for heartbeat
 	asio::deadline_timer timer;	// timer for libcurl
 	std::map<CURL *, BaseTask *> curl2task;	// curl easy handler to task pointer
 	std::map<curl_socket_t, asio::ip::tcp::socket *> sockmap;

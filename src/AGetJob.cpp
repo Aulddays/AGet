@@ -33,10 +33,11 @@ int AGetJob::get(const char *geturl)
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, onDebug);
 	curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)task);
-	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, onProgress);
-	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, onProgress);
+	//curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, onProgress);
+	//curl_easy_setopt(curl, CURLOPT_XFERINFODATA, task);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, FALSE);
+	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
 	//curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
 
 	return aget->addTask(curl, task);
@@ -214,7 +215,7 @@ int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, 
 	return 0;
 }
 
-int AGetJob::onProgress(Task *task, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+int AGetJob::onHeartbeat(time_t now)
 {
 	return 0;
 }
