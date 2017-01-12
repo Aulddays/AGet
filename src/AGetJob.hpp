@@ -5,20 +5,23 @@
 
 #include "AGet.hpp"
 
-class MultiProgress
+struct MultiProgress
 {
-	uint64_t size;
-	std::vector<std::pair<uint64_t, uint64_t> > parts;
 	MultiProgress() :size(0){}
 	int add(uint64_t s, uint64_t e)
 	{
 		return 0;
 	}
+	uint64_t size;
+	std::vector<std::pair<uint64_t, uint64_t> > parts;
 };
 
 class AGetJob
 {
 public:
+	static const size_t MAXJOBNUM = 10;
+	static const size_t MINJOBSIZE = 1024 * 256;
+	static const time_t REQINTERVAL = 3;	// At least 3 seconds between two requests
 	AGetJob(AGet *aget);
 	~AGetJob();
 
@@ -51,6 +54,7 @@ private:
 			encode = false;
 		}
 	};
+	int startTask(int id, uint64_t start, uint64_t end);
 	static size_t onData(char *cont, size_t size, size_t nmemb, Task *task);
 	//static size_t onHeader(char *cont, size_t size, size_t nmemb, Task *task);
 	static int onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, Task *task);
@@ -61,6 +65,8 @@ private:
 	size_t tasknum;
 	time_t lastreq;	// time of last task request, to limit http request frequency
 	uint64_t size;
+	int taskid;
+	MultiProgress progress;
 
 	enum
 	{

@@ -1,8 +1,14 @@
 #include "stdafx.h"
 #include "AGetJob.hpp"
 
+#if defined(_DEBUG) && defined(_MSC_VER)
+#	ifndef DBG_NEW
+#		define DBG_NEW new ( _NORMAL_BLOCK , __FILE__ , __LINE__ )
+#		define new DBG_NEW
+#	endif
+#endif  // _DEBUG
 
-AGetJob::AGetJob(AGet *aget) : aget(aget), size(-1), status(JOB_START)
+AGetJob::AGetJob(AGet *aget) : aget(aget), size(-1), taskid(0), status(JOB_START)
 {
 }
 
@@ -14,6 +20,11 @@ AGetJob::~AGetJob()
 int AGetJob::get(const char *geturl)
 {
 	url = geturl;
+	return startTask(0, 0, -1);
+}
+
+int AGetJob::startTask(int id, uint64_t start, uint64_t end)
+{
 	CURL *curl = curl_easy_init();
 	if (!curl)
 	{
@@ -21,7 +32,7 @@ int AGetJob::get(const char *geturl)
 		return -1;
 	}
 
-	Task *task = new Task(aget, this, 0, curl, 0, -1);
+	Task *task = new Task(aget, this, id, curl, start, end);
 	tasks.insert(task);
 
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -84,8 +95,11 @@ size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 			if (!task->encode && task->size != -1)
 			{
 				PELOG_LOG((PLV_INFO, "Multi-tasking supported.\n"));
-				pthis->status = JOB_MULTI;
+				pthis->status = JOB_MULTI_START;
+				pthis->size = task->size;
 				// determine number of tasks
+				if (pthis->size < MINJOBSIZE * 2)
+					pthis->status = JOB_MULTI;
 			}
 			else
 			{
@@ -93,7 +107,7 @@ size_t AGetJob::onData(char *cont, size_t size, size_t nmemb, Task *task)
 				pthis->status = JOB_SINGLE;
 			}
 		}
-
+		pthis->lastreq = time(NULL);
 	}
 	size_t realsize = size * nmemb;
 	printf("%lu bytes retrieved\n", (unsigned long)realsize);
@@ -217,5 +231,26 @@ int AGetJob::onDebug(CURL *handle, curl_infotype type, char *cont, size_t size, 
 
 int AGetJob::onHeartbeat(time_t now)
 {
+	// check if a new task is needed
+	if (now < lastreq + REQINTERVAL && now + REQINTERVAL >= lastreq)
+		return 0;
+	if (tasks.size() >= MAXJOBNUM)
+		return 0;
+	if (tasks.empty() && status == JOB_START)	// init job failed, restart it
+	{
+		lastreq = now;
+		return startTask(0, 0, -1);
+	}
+	if (status != JOB_MULTI && status != JOB_MULTI_START)
+		return 0;
+	if (status == JOB_MULTI_START)
+	{
+		// start phase, get last pending piece and split it
+		uint64_t start = 0;
+	}
+	// not start phase, start first failed piece or largest splitable piece
+	for (size_t ip = 0; ip < progress.parts.size(); ++ip)
+	{
+	}
 	return 0;
 }

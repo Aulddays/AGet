@@ -5,6 +5,13 @@
 #include "AGet.hpp"
 #include "AGetJob.hpp"
 
+#if defined(_DEBUG) && defined(_MSC_VER)
+#	ifndef DBG_NEW
+#		define DBG_NEW new ( _NORMAL_BLOCK , __FILE__ , __LINE__ )
+#		define new DBG_NEW
+#	endif
+#endif  // _DEBUG
+
 static class CurlGlobalHelper	// a helper to handle curl global init and cleanup
 {
 public:
@@ -51,6 +58,8 @@ int AGet::onJobDone(AGetJob *job)
 	fprintf(stderr, "Job done.\n");
 	jobs.erase(ijob);
 	delete job;
+	if (jobs.empty() && mode == MODE_ONCE)
+		hbtimer.cancel();
 	return 0;
 }
 
@@ -92,14 +101,21 @@ int AGet::onTaskDone(CURL *curl, CURLcode code)
 
 void AGet::onHeartbeat(const asio::error_code & ec)
 {
-	time_t now = time(NULL);
-	for (auto i = jobs.begin(); i != jobs.end();)
+	if (!ec)
 	{
-		auto next = i;
-		++next;	// i may be invalidated during heartBeat, so must not ++i directly
-		(*i)->onHeartbeat(now);
-		i = next;
+		time_t now = time(NULL);
+		for (auto i = jobs.begin(); i != jobs.end();)
+		{
+			auto next = i;
+			++next;	// i may be invalidated during heartBeat, so must not ++i directly
+			(*i)->onHeartbeat(now);
+			i = next;
+		}
+		hbtimer.expires_from_now(boost::posix_time::millisec(1000));
+		hbtimer.async_wait(boost::bind(&AGet::onHeartbeat, this, _1));
 	}
+	else
+		PELOG_LOG((PLV_INFO, "hbtimer %s\n", ec.message().c_str()));
 }
 
 ////////// libcurl-asio helpers
